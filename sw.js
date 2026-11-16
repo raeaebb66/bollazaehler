@@ -2,7 +2,7 @@
 // Geänderte Dateien holt die App beim Öffnen im Hintergrund und zeigt sie beim nächsten Start.
 // Bei jeder neuen Fassung VERSION erhöhen, gleicher Wert wie APP_VERSION in index.html
 // (z. B. '1.1' für kleine Änderungen, '2.0' für große).
-const VERSION = '1.0';
+const VERSION = '1.1';
 const CACHE = 'bolla-v' + VERSION;
 const CORE = ['./', './index.html'];
 const EXTRA = ['./manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
