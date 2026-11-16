@@ -1,0 +1,17 @@
+{
+  "name": "Bolla-Zähler",
+  "short_name": "Bolla",
+  "description": "Strichliste für die Kartenrunde: Rufdeck, Badisch und Scharf.",
+  "lang": "de",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#252e31",
+  "theme_color": "#252e31",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
