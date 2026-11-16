@@ -97,7 +97,7 @@ th { color: var(--kreide-matt); font-weight: 400; font-size: .875rem; }
 td.z, th.z { text-align: right; }
 
 /* Tafel */
-.leiste { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px 10px; border-bottom: 1.5px solid var(--linie); }
+.leiste { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 28px 16px 10px; border-bottom: 1.5px solid var(--linie); }
 .leiste .titel { font-family: var(--font-display); font-size: 1.5rem; font-weight: 700; line-height: 1; text-align: center; }
 .leiste .titel small { display: block; font-family: var(--font-body); font-size: .8rem; font-weight: 400; color: var(--kreide-matt); margin-top: 3px; }
 .leiste button { min-height: 40px; padding: 6px 10px; font-size: .875rem; }
@@ -207,7 +207,7 @@ function aggregate(entries, mode) {
 //LOGIC-END
 
 // ---------- Speicher ----------
-const APP_VERSION = 5; // zusammen mit VERSION in sw.js erhöhen
+const APP_VERSION = 6; // zusammen mit VERSION in sw.js erhöhen
 const KEY = 'bolla-zaehler-v1';
 let db = { players: [], session: null, archive: [], undo: [] };
 try {
