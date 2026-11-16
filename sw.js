@@ -1,7 +1,7 @@
 // Bolla-Zähler: Offline-Cache.
-// Bei jeder Änderung an den Dateien die Zahl in VERSION erhöhen
-// (und APP_VERSION in index.html), damit Handys den neuen Stand holen.
-const VERSION = 2;
+// Geänderte Dateien holt die App beim Öffnen im Hintergrund und zeigt sie beim nächsten Start.
+// Wurden Dateien hinzugefügt oder entfernt, VERSION erhöhen (und APP_VERSION in index.html).
+const VERSION = 3;
 const CACHE = 'bolla-v' + VERSION;
 const CORE = ['./', './index.html'];
 const EXTRA = ['./manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
@@ -33,7 +33,7 @@ self.addEventListener('fetch', e => {
   e.respondWith(
     caches.open(CACHE).then(cache =>
       cache.match(req, { ignoreSearch: true }).then(hit => {
-        const frisch = fetch(req).then(res => {
+        const frisch = fetch(req, { cache: 'no-cache' }).then(res => {
           if (res && res.ok) cache.put(req, res.clone());
           return res;
         }).catch(() => hit || (req.mode === 'navigate' ? cache.match('./index.html') : null) || Response.error());

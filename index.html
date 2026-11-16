@@ -207,7 +207,7 @@ function aggregate(entries, mode) {
 //LOGIC-END
 
 // ---------- Speicher ----------
-const APP_VERSION = 2; // zusammen mit VERSION in sw.js erhöhen
+const APP_VERSION = 3; // zusammen mit VERSION in sw.js erhöhen
 const KEY = 'bolla-zaehler-v1';
 let db = { players: [], session: null, archive: [], undo: [] };
 try {
@@ -252,7 +252,7 @@ function vStart() {
   const modus = (n, text) => `<button class="modus" data-act="mode" data-n="${n}" ${s ? 'disabled' : ''}>
       <span class="zahl">${n}</span><span><span class="wer">${STUFE[n]}</span><br><span class="matt klein">${text}</span></span></button>`;
   return `<div class="seite">
-    <div class="kopf"><h1>Bolla-Zähler</h1><p class="matt">Die Strichliste für die Team 66.</p></div>
+    <div class="kopf"><h1>Bolla-Zähler</h1><p class="matt">Die Strichliste für Team 66.</p></div>
     ${laeuft}
     <div class="modi">
       ${modus(4, 'Zu viert. Bei 7 Strichen raus, dann Badisch, dann Scharf.')}
@@ -501,12 +501,31 @@ async function checkOffline() {
   document.body.appendChild(probe);
   const cs = getComputedStyle(probe);
   const tech = `Version ${APP_VERSION}. Fenster ${innerWidth}×${innerHeight}, Bildschirm ${screen.width}×${screen.height}, `
-    + `Sicherer Bereich oben ${cs.paddingTop}, unten ${cs.paddingBottom}, als App gestartet: ${navigator.standalone ? 'ja' : 'nein'}.`;
+    + `Sicherer Bereich oben ${cs.paddingTop}, unten ${cs.paddingBottom}, als App gestartet: ${navigator.standalone ? 'ja' : 'nein'}, Höhenkorrektur: ${document.getElementById('app').style.bottom || 'keine'}.`;
   probe.remove();
   const a = document.getElementById('offline-status'), b = document.getElementById('tech-info');
   if (a) a.textContent = text;
   if (b) b.textContent = tech;
 }
+
+// iOS-Web-App: window.innerHeight ist um die Höhe der Statusleiste kleiner als der Bildschirm,
+// die App wäre unten zu kurz. Nur in genau diesem Fall wird sie nach unten verlängert.
+function bottomOffset(standalone, top, screenH, innerH) {
+  return standalone && top > 0 && Math.abs((screenH - innerH) - top) <= 2 ? -top : 0;
+}
+const insetProbe = document.createElement('div');
+insetProbe.style.cssText = 'position:fixed;top:0;left:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top)';
+document.body.appendChild(insetProbe);
+function fitHeight() {
+  const app = document.getElementById('app');
+  const top = parseFloat(getComputedStyle(insetProbe).paddingTop) || 0;
+  const off = bottomOffset(!!navigator.standalone, top, screen.height, innerHeight);
+  app.style.bottom = off ? off + 'px' : '';
+}
+fitHeight();
+addEventListener('resize', fitHeight);
+addEventListener('orientationchange', () => setTimeout(fitHeight, 200));
+document.addEventListener('visibilitychange', fitHeight);
 
 render();
 
