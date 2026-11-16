@@ -215,7 +215,7 @@ function aggregate(entries, mode) {
 //LOGIC-END
 
 // ---------- Speicher ----------
-const APP_VERSION = 9; // zusammen mit VERSION in sw.js erhöhen
+const APP_VERSION = '1.0'; // bei jeder Änderung erhöhen, zusammen mit VERSION in sw.js (gleicher Wert)
 const KEY = 'bolla-zaehler-v1';
 let db = { players: [], session: null, archive: [], undo: [], settings: {} };
 try {
@@ -258,15 +258,17 @@ function vStart() {
       <button class="haupt" data-act="nav" data-v="game">Weiterspielen</button>
     </div>`;
   }
-  const modus = (n, text) => `<button class="modus" data-act="mode" data-n="${n}" ${s ? 'disabled' : ''}>
-      <span class="zahl">${n}</span><span><span class="wer">${STUFE[n]}</span><br><span class="matt klein">${text}</span></span></button>`;
+  // Namen nur für die Startseite; im Spiel heißt der Modus weiter „Scharf“.
+  const START_NAME = { 4: 'Rufdeck', 3: 'Badisch', 2: 'An scharfa' };
+  const modus = n => `<button class="modus" data-act="mode" data-n="${n}" ${s ? 'disabled' : ''}>
+      <span class="zahl">${n}</span><span class="wer">${START_NAME[n]}</span></button>`;
   return `<div class="seite">
     <div class="kopf"><h1>Bolla-Zähler</h1><p class="matt">Die Strichliste für Team 66.</p></div>
     ${laeuft}
     <div class="modi">
-      ${modus(4, 'Zu viert. Bei 7 Strichen raus, dann Badisch, dann Scharf.')}
-      ${modus(3, 'Zu dritt. Bei 7 Strichen raus, dann Scharf.')}
-      ${modus(2, 'Zu zweit. Punkte hochzählen.')}
+      ${modus(4)}
+      ${modus(3)}
+      ${modus(2)}
     </div>
     ${s ? '<p class="matt klein">Für einen neuen Abend erst den laufenden beenden.</p>' : ''}
     <div class="zeile">
