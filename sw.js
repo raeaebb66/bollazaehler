@@ -1,23 +1,21 @@
 // Bolla-Zähler: Offline-Cache.
-// Bei jeder Änderung an den Dateien die Zahl in VERSION erhöhen,
-// damit Handys den neuen Stand holen.
-const VERSION = 1;
+// Bei jeder Änderung an den Dateien die Zahl in VERSION erhöhen
+// (und APP_VERSION in index.html), damit Handys den neuen Stand holen.
+const VERSION = 2;
 const CACHE = 'bolla-v' + VERSION;
-const FILES = [
-  './',
-  './index.html',
-  './manifest.webmanifest',
-  './icon-192.png',
-  './icon-512.png',
-  './apple-touch-icon.png',
-  './fonts/atkinson-hyperlegible-latin-400-normal.woff2',
-  './fonts/atkinson-hyperlegible-latin-700-normal.woff2',
-  './fonts/grenze-gotisch-latin-400-normal.woff2',
-  './fonts/grenze-gotisch-latin-700-normal.woff2'
-];
+const CORE = ['./', './index.html'];
+const EXTRA = ['./manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
+// Nur die Kerndateien sind Pflicht. Fehlt ein Icon, läuft der Offline-Modus trotzdem.
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(CACHE)
+      .then(async c => {
+        await c.addAll(CORE);
+        await Promise.allSettled(EXTRA.map(u => c.add(u)));
+      })
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', e => {
@@ -38,7 +36,7 @@ self.addEventListener('fetch', e => {
         const frisch = fetch(req).then(res => {
           if (res && res.ok) cache.put(req, res.clone());
           return res;
-        }).catch(() => hit);
+        }).catch(() => hit || (req.mode === 'navigate' ? cache.match('./index.html') : null) || Response.error());
         return hit || frisch;
       })
     )
