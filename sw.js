@@ -1,7 +1,7 @@
 // Bolla-Zähler: Offline-Cache.
 // Geänderte Dateien holt die App beim Öffnen im Hintergrund und zeigt sie beim nächsten Start.
 // Wurden Dateien hinzugefügt oder entfernt, VERSION erhöhen (und APP_VERSION in index.html).
-const VERSION = 4;
+const VERSION = 5;
 const CACHE = 'bolla-v' + VERSION;
 const CORE = ['./', './index.html'];
 const EXTRA = ['./manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
