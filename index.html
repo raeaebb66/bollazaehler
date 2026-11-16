@@ -126,7 +126,7 @@ td.z, th.z { text-align: right; }
 .feld.raus .stand { text-transform: uppercase; letter-spacing: .06em; }
 
 .eingabe { border-top: 1.5px solid var(--linie); padding: 10px 16px calc(12px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 10px; background: var(--schiefer); }
-.meldung { min-height: 1.4em; font-size: .9rem; color: var(--schellen); text-wrap: balance; }
+.meldung { min-height: 1.4em; font-size: .9rem; color: var(--schellen); text-wrap: pretty; }
 .eingabe .reihe > * { padding: 0 4px; }
 .steller { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
 .steller button { padding: 0; font-size: 1.4rem; line-height: 1; }
@@ -134,6 +134,8 @@ td.z, th.z { text-align: right; }
 .steller .minus { min-height: 36px; }
 .steller .neu { font-family: var(--font-display); font-size: 1.5rem; line-height: 1; font-variant-numeric: tabular-nums; }
 .steller .neu.null { color: var(--kreide-matt); }
+.schalter { min-width: 64px; border-radius: 999px; font-weight: 700; flex: none; }
+.schalter[aria-checked=true] { background: var(--schellen); border-color: var(--schellen); color: var(--schiefer); }
 .zufall { width: 100%; min-height: 48px; border-color: var(--schellen); color: var(--schellen); font-weight: 700; }
 .bollknopf.dran { background: var(--herz); color: var(--kreide); }
 .bollknopf.dran .punkt { background: var(--kreide); }
@@ -213,13 +215,14 @@ function aggregate(entries, mode) {
 //LOGIC-END
 
 // ---------- Speicher ----------
-const APP_VERSION = 8; // zusammen mit VERSION in sw.js erhöhen
+const APP_VERSION = 9; // zusammen mit VERSION in sw.js erhöhen
 const KEY = 'bolla-zaehler-v1';
-let db = { players: [], session: null, archive: [], undo: [] };
+let db = { players: [], session: null, archive: [], undo: [], settings: {} };
 try {
   const raw = localStorage.getItem(KEY);
   if (raw) db = Object.assign(db, JSON.parse(raw));
 } catch (e) { /* ohne Speicher läuft die App nur bis zum Schließen */ }
+const zufallAn = () => !db.settings || db.settings.zufall !== false;
 function save() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} }
 
 // ---------- Zustand der Oberfläche ----------
@@ -337,7 +340,7 @@ function vGame() {
     panel = `<div class="reihe" style="--n:${n}"><div></div>${s.players.map((p, i) => ph.candidates.includes(i)
         ? `<div><button class="bollknopf" data-act="boll" data-i="${i}"><span class="punkt"></span>Boll</button></div>`
         : '<div class="matt klein">raus</div>').join('')}</div>
-      ${ph.alle ? '<button class="zufall" data-act="zufall">🎰🎰🎰 Zufallsboll 🎰🎰🎰</button>' : ''}
+      ${ph.alle && zufallAn() ? '<button class="zufall" data-act="zufall">🎰🎰🎰 Zufallsboll 🎰🎰🎰</button>' : ''}
       <div class="aktionen"><button data-act="undo" ${db.undo.length ? '' : 'disabled'}>Rückgängig</button>
       ${ph.alle ? '<button class="haupt" data-act="keine">Keine Boll</button>' : ''}</div>`;
   }
@@ -386,6 +389,9 @@ function vSettings() {
       || '<p class="matt">Noch keine Spieler gespeichert.</p>'}</div>
     ${addForm()}
     <p class="matt klein">Entfernte Spieler bleiben in der Statistik stehen.</p>
+    <div class="kasten"><div class="zeile auseinander" style="flex-wrap:nowrap">
+      <div><strong>Zufallsboll</strong><br><span class="matt klein">Knopf, wenn alle gleichzeitig 7 Striche haben.</span></div>
+      <button class="schalter" role="switch" aria-checked="${zufallAn()}" data-act="zufallset" aria-label="Zufallsboll">${zufallAn() ? 'An' : 'Aus'}</button></div></div>
     <div class="kasten"><strong>Offline-Modus</strong>
       <p class="matt klein" id="offline-status">Wird geprüft …</p>
       <p class="matt klein" id="tech-info"></p></div>
@@ -469,6 +475,7 @@ document.addEventListener('click', ev => {
   if (act !== 'arm' && armed) { armed = null; clearTimeout(armTimer); }
   switch (act) {
     case 'nav': view = b.dataset.v; break;
+    case 'zufallset': db.settings = db.settings || {}; db.settings.zufall = !zufallAn(); save(); break;
     case 'mode': setupMode = Number(b.dataset.n); chosen = []; view = 'setup'; break;
     case 'toggle': {
       const id = b.dataset.id, k = chosen.indexOf(id);
