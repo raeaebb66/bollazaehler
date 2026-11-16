@@ -29,6 +29,7 @@
   --kreide-matt: #9eaaa8;   /* Nebentext */
   --schellen: #e6b541;      /* gspannt */
   --herz: #e0604f;          /* Boll */
+  --abstand-oben: 25px;     /* Abstand oben auf allen Seiten */
   --font-display: "Grenze Gotisch", "Luminari", "Palatino Linotype", Georgia, serif;
   --font-body: "Atkinson Hyperlegible", -apple-system, "Segoe UI", Roboto, sans-serif;
 }
@@ -42,7 +43,7 @@ body {
   line-height: 1.4;
   -webkit-text-size-adjust: 100%;
 }
-#app { height: 100%; max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; padding-top: env(safe-area-inset-top); }
+#app { height: 100%; max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; padding-top: calc(env(safe-area-inset-top) + var(--abstand-oben)); }
 h1, h2 { font-family: var(--font-display); font-weight: 700; margin: 0; text-wrap: balance; letter-spacing: .01em; }
 h1 { font-size: 2.6rem; line-height: 1; }
 h2 { font-size: 1.6rem; line-height: 1.1; }
@@ -75,7 +76,7 @@ input[type=text] {
 input::placeholder { color: var(--kreide-matt); }
 
 /* Seiten ohne Tafel */
-.seite { padding: 28px 16px calc(24px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 20px; overflow-y: auto; height: 100%; }
+.seite { padding: 4px 16px calc(24px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 20px; overflow-y: auto; height: 100%; }
 .kopf { display: flex; flex-direction: column; gap: 6px; }
 .zeile { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .zeile.auseinander { justify-content: space-between; }
@@ -90,14 +91,16 @@ input::placeholder { color: var(--kreide-matt); }
 .chip[aria-pressed=true] { background: var(--kreide); color: var(--schiefer); border-color: var(--kreide); font-weight: 700; }
 .chip .platz { font-variant-numeric: tabular-nums; opacity: .7; }
 .liste { display: flex; flex-direction: column; }
-.liste > div { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--linie); }
+.liste > div { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 3px 0; min-height: 44px; border-bottom: 1px solid var(--linie); }
+.entf { min-height: 36px; min-width: 36px; padding: 0 10px; border-radius: 18px; font-size: 1.3rem; line-height: 1; }
+.entf.warn { font-size: .875rem; font-weight: 700; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--linie); }
 th { color: var(--kreide-matt); font-weight: 400; font-size: .875rem; }
 td.z, th.z { text-align: right; }
 
 /* Tafel */
-.leiste { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 28px 16px 10px; border-bottom: 1.5px solid var(--linie); }
+.leiste { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 16px 10px; border-bottom: 1.5px solid var(--linie); }
 .leiste .titel { font-family: var(--font-display); font-size: 1.5rem; font-weight: 700; line-height: 1; text-align: center; }
 .leiste .titel small { display: block; font-family: var(--font-body); font-size: .8rem; font-weight: 400; color: var(--kreide-matt); margin-top: 3px; }
 .leiste button { min-height: 40px; padding: 6px 10px; font-size: .875rem; }
@@ -131,6 +134,9 @@ td.z, th.z { text-align: right; }
 .steller .minus { min-height: 36px; }
 .steller .neu { font-family: var(--font-display); font-size: 1.5rem; line-height: 1; font-variant-numeric: tabular-nums; }
 .steller .neu.null { color: var(--kreide-matt); }
+.zufall { width: 100%; min-height: 48px; border-color: var(--schellen); color: var(--schellen); font-weight: 700; }
+.bollknopf.dran { background: var(--herz); color: var(--kreide); }
+.bollknopf.dran .punkt { background: var(--kreide); }
 .bollknopf { width: 100%; min-height: 64px; border-color: var(--herz); padding: 6px 2px; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: .85rem; }
 .aktionen { display: flex; gap: 10px; }
 .aktionen .haupt { flex: 1; }
@@ -207,7 +213,7 @@ function aggregate(entries, mode) {
 //LOGIC-END
 
 // ---------- Speicher ----------
-const APP_VERSION = 6; // zusammen mit VERSION in sw.js erhöhen
+const APP_VERSION = 8; // zusammen mit VERSION in sw.js erhöhen
 const KEY = 'bolla-zaehler-v1';
 let db = { players: [], session: null, archive: [], undo: [] };
 try {
@@ -234,9 +240,9 @@ function tally(n, h) {
   if (n >= 6) p += `<line x1="${(w * 0.03).toFixed(1)}" y1="${(h * 0.62).toFixed(1)}" x2="${(w * 0.97).toFixed(1)}" y2="${(h * 0.38).toFixed(1)}"/>`;
   return `<svg class="tally" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true">${p}</svg>`;
 }
-function armBtn(key, label, sure, cls) {
+function armBtn(key, label, sure, cls, extra, aria) {
   const on = armed === key;
-  return `<button class="${on ? 'warn' : (cls || 'still')}" data-act="arm" data-key="${key}">${on ? sure : label}</button>`;
+  return `<button class="${on ? 'warn' : (cls || 'still')}${extra ? ' ' + extra : ''}" data-act="arm" data-key="${key}"${aria && !on ? ` aria-label="${aria}"` : ''}>${on ? sure : label}</button>`;
 }
 
 // ---------- Ansichten ----------
@@ -331,6 +337,7 @@ function vGame() {
     panel = `<div class="reihe" style="--n:${n}"><div></div>${s.players.map((p, i) => ph.candidates.includes(i)
         ? `<div><button class="bollknopf" data-act="boll" data-i="${i}"><span class="punkt"></span>Boll</button></div>`
         : '<div class="matt klein">raus</div>').join('')}</div>
+      ${ph.alle ? '<button class="zufall" data-act="zufall">🎰🎰🎰 Zufallsboll 🎰🎰🎰</button>' : ''}
       <div class="aktionen"><button data-act="undo" ${db.undo.length ? '' : 'disabled'}>Rückgängig</button>
       ${ph.alle ? '<button class="haupt" data-act="keine">Keine Boll</button>' : ''}</div>`;
   }
@@ -375,7 +382,7 @@ function vSettings() {
   const busy = db.session ? db.session.players.map(p => p.id) : [];
   return `<div class="seite"><div class="kopf"><h2>Einstellungen</h2><p class="matt">Spielerliste bearbeiten.</p></div>
     <div class="liste">${db.players.map(p => `<div><span>${esc(p.name)}</span>${busy.includes(p.id)
-      ? '<span class="matt klein">spielt gerade</span>' : armBtn('del:' + p.id, 'Entfernen', 'Wirklich entfernen?')}</div>`).join('')
+      ? '<span class="matt klein">spielt gerade</span>' : armBtn('del:' + p.id, '−', 'Entfernen?', 'still', 'entf', esc(p.name) + ' entfernen')}</div>`).join('')
       || '<p class="matt">Noch keine Spieler gespeichert.</p>'}</div>
     ${addForm()}
     <p class="matt klein">Entfernte Spieler bleiben in der Statistik stehen.</p>
@@ -385,11 +392,17 @@ function vSettings() {
     <div class="zeile"><button class="still" data-act="nav" data-v="start">Zurück</button></div></div>`;
 }
 
+let lastView = null;
 function render() {
   const app = document.getElementById('app');
+  const alt = app.querySelector('.seite');
+  const pos = alt && lastView === view ? alt.scrollTop : 0;
   app.innerHTML = ({ start: vStart, setup: vSetup, game: vGame, result: vResult, stats: vStats, settings: vSettings }[view] || vStart)();
   const t = document.getElementById('tafel');
   if (t) t.scrollTop = t.scrollHeight;
+  const neu = app.querySelector('.seite');
+  if (neu && pos) neu.scrollTop = pos;
+  lastView = view;
   if (view === 'settings') checkOffline();
 }
 
@@ -417,7 +430,39 @@ function liste(idx) {
   return n.length > 1 ? n.slice(0, -1).join(', ') + ' und ' + n[n.length - 1] : n[0];
 }
 
+// Zufallsboll: Lauflicht über die Boll-Knöpfe, bremst ab und bleibt beim Ziel stehen.
+let dreht = false;
+function zufallszahl(n) {
+  try { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % n; }
+  catch (e) { return Math.floor(Math.random() * n); }
+}
+function zufallsboll() {
+  const s = db.session, kand = phaseOf(s).candidates;
+  const ziel = kand[zufallszahl(kand.length)];
+  const fertig = () => {
+    dreht = false; snapshot(); giveBoll(s, ziel, false);
+    flash = `🎰 Zufallsboll: ${esc(nameOf(ziel))} bekommt die Boll. Neue Boll, alle bei 0.`;
+    save(); render();
+  };
+  const knoepfe = [...document.querySelectorAll('.bollknopf')];
+  const ruhig = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!knoepfe.length || ruhig) { fertig(); return; }
+  dreht = true;
+  document.querySelectorAll('.eingabe button:not(.bollknopf)').forEach(x => { x.disabled = true; });
+  const zielPos = kand.indexOf(ziel);
+  const schritte = kand.length * 3 + zielPos;   // drei Runden, dann das Ziel
+  let k = 0;
+  const tick = () => {
+    knoepfe.forEach((x, j) => x.classList.toggle('dran', j === k % kand.length));
+    if (k >= schritte) { setTimeout(fertig, 700); return; }
+    k++;
+    setTimeout(tick, 70 + Math.pow(k / schritte, 3) * 380);
+  };
+  tick();
+}
+
 document.addEventListener('click', ev => {
+  if (dreht) return;
   const b = ev.target.closest('[data-act]');
   if (!b || b.disabled) return;
   const act = b.dataset.act, i = Number(b.dataset.i), s = db.session;
@@ -452,6 +497,7 @@ document.addEventListener('click', ev => {
       break;
     }
     case 'boll': snapshot(); giveBoll(s, i, false); flash = `${esc(nameOf(i))} bekommt die Boll. Neue Boll, alle bei 0.`; save(); break;
+    case 'zufall': zufallsboll(); return;
     case 'keine': snapshot(); giveBoll(s, null, false); flash = 'Keine Boll vergeben. Neue Boll, alle bei 0.'; save(); break;
     case 'point': snapshot(); s.points[i]++; save(); break;
     case 'undo':
