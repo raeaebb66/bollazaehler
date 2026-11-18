@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src data:; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="theme-color" content="#252e31">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -51,7 +52,7 @@ p { margin: 0; }
 .matt { color: var(--kreide-matt); }
 .klein { font-size: .875rem; }
 
-button, input { font: inherit; color: inherit; }
+button, input, textarea { font: inherit; color: inherit; }
 button {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
@@ -64,7 +65,7 @@ button {
 }
 button:active:not(:disabled) { transform: translateY(1px); background: var(--linie); }
 button:disabled { opacity: .4; cursor: default; }
-button:focus-visible, input:focus-visible { outline: 2px solid var(--schellen); outline-offset: 2px; }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--schellen); outline-offset: 2px; }
 .haupt { background: var(--kreide); color: var(--schiefer); border-color: var(--kreide); font-weight: 700; }
 .haupt:active:not(:disabled) { background: #cfcdc4; }
 .still { background: transparent; }
@@ -73,7 +74,12 @@ input[type=text] {
   background: transparent; border: 1.5px solid var(--linie); border-radius: 10px;
   min-height: 44px; padding: 8px 12px; min-width: 0; flex: 1;
 }
-input::placeholder { color: var(--kreide-matt); }
+input::placeholder, textarea::placeholder { color: var(--kreide-matt); }
+textarea {
+  width: 100%; min-height: 96px; resize: vertical; font-size: 16px; /* 16px: sonst zoomt iOS beim Antippen */
+  background: transparent; border: 1.5px solid var(--linie); border-radius: 10px; padding: 8px 12px;
+}
+.speicherfehler { flex: none; background: var(--herz); color: var(--kreide); font-size: .85rem; text-align: center; padding: 6px 16px; }
 
 /* Seiten ohne Tafel */
 .seite { padding: 4px 16px calc(24px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 20px; overflow-y: auto; height: 100%; }
@@ -205,9 +211,11 @@ function aggregate(entries, mode) {
   const m = new Map();
   entries.filter(e => e.mode === mode).forEach(e => {
     e.players.forEach((p, i) => {
-      const x = m.get(p.id) || { name: p.name, abende: 0, wert: 0 };
+      // Nach Name zusammenfassen: Wer gelöscht und neu angelegt wird, bekommt eine neue ID, bleibt aber dieselbe Person.
+      const key = p.name.trim().toLowerCase();
+      const x = m.get(key) || { name: p.name, abende: 0, wert: 0 };
       x.name = p.name; x.abende++; x.wert += (mode === 2 ? e.points[i] : e.bolls[i]);
-      m.set(p.id, x);
+      m.set(key, x);
     });
   });
   return [...m.values()].sort((a, b) => b.wert - a.wert || a.name.localeCompare(b.name));
@@ -215,19 +223,111 @@ function aggregate(entries, mode) {
 //LOGIC-END
 
 // ---------- Speicher ----------
-const APP_VERSION = '1.1'; // bei jeder Änderung erhöhen, zusammen mit VERSION in sw.js (gleicher Wert)
+const APP_VERSION = '1.2'; // bei jeder Änderung erhöhen, zusammen mit VERSION in sw.js (gleicher Wert)
 const KEY = 'bolla-zaehler-v1';
-let db = { players: [], session: null, archive: [], undo: [], settings: {} };
+const KEY_P = KEY + '-offen'; // Striche, die schon getippt, aber noch nicht eingetragen sind
+
+// Alles, was aus dem Speicher oder aus einer Sicherung kommt, wird geprüft und neu aufgebaut.
+// Beschädigte Teile fliegen raus, statt die App beim Start abstürzen zu lassen.
+const isArr = Array.isArray;
+const isNum = v => typeof v === 'number' && Number.isFinite(v);
+const okPlayer = p => !!p && typeof p.id === 'string' && p.id !== '' && p.id.length <= 40
+  && typeof p.name === 'string' && p.name.trim() !== '';
+const cleanPlayer = p => ({ id: p.id, name: p.name.trim().slice(0, 40) });
+function validSession(s) {
+  if (!s || !isArr(s.players) || !s.players.length || !s.players.every(okPlayer) || !isNum(s.startedAt)) return false;
+  if (s.mode === 2) return s.players.length === 2 && isArr(s.points) && s.points.length === 2 && s.points.every(isNum);
+  if (s.mode !== 3 && s.mode !== 4) return false;
+  const n = s.players.length;
+  return n === s.mode && isArr(s.rounds) && s.rounds.length > 0 && s.rounds.every(r =>
+    !!r && isArr(r.strokes) && r.strokes.length === n && r.strokes.every(isNum)
+    && isArr(r.out) && r.out.every(Number.isInteger)
+    && (r.pick === null || (isArr(r.pick) && r.pick.every(Number.isInteger)))
+    && (r.boll === null || Number.isInteger(r.boll)));
+}
+function cleanEntry(e) {
+  if (!e || ![2, 3, 4].includes(e.mode) || !isArr(e.players) || !e.players.every(okPlayer)) return null;
+  const w = e.mode === 2 ? e.points : e.bolls;
+  if (!isArr(w) || w.length !== e.players.length || !w.every(isNum)) return null;
+  const out = { mode: e.mode, date: isNum(e.date) ? e.date : 0, players: e.players.map(cleanPlayer) };
+  out[e.mode === 2 ? 'points' : 'bolls'] = w.slice();
+  return out;
+}
+function cleanDb(d) {
+  d = d && typeof d === 'object' ? d : {};
+  return {
+    players: isArr(d.players) ? d.players.filter(okPlayer).map(cleanPlayer) : [],
+    session: validSession(d.session) ? d.session : null,
+    archive: isArr(d.archive) ? d.archive.map(cleanEntry).filter(Boolean) : [],
+    undo: isArr(d.undo) ? d.undo.filter(u => typeof u === 'string').slice(-60) : [],
+    settings: d.settings && d.settings.zufall === false ? { zufall: false } : {}
+  };
+}
+
+let db = cleanDb(null);
+let saveFehler = false;
+let raw = null;
 try {
-  const raw = localStorage.getItem(KEY);
-  if (raw) db = Object.assign(db, JSON.parse(raw));
-} catch (e) { /* ohne Speicher läuft die App nur bis zum Schließen */ }
+  raw = localStorage.getItem(KEY);
+  if (raw) db = cleanDb(JSON.parse(raw));
+} catch (e) {
+  // Daten unlesbar: leer starten, aber die alten Rohdaten vor dem Überschreiben beiseitelegen.
+  try { if (raw) localStorage.setItem(KEY + '-defekt', raw); } catch (e2) {}
+}
 const zufallAn = () => !db.settings || db.settings.zufall !== false;
-function save() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} }
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(db)); saveFehler = false; }
+  catch (e) { saveFehler = true; } // wird oben in der App als Warnband gezeigt
+}
+
+// Noch nicht eingetragene Striche überleben, wenn iOS die App im Hintergrund beendet.
+function loadPending() {
+  try {
+    const p = JSON.parse(localStorage.getItem(KEY_P) || 'null'), s = db.session;
+    if (!p || !s || s.mode === 2 || p.sid !== s.startedAt || !isArr(p.v)) return [];
+    const ph = phaseOf(s);
+    if (ph.kind !== 'play') return [];
+    const r = currentRound(s), out = [];
+    ph.active.forEach(i => {
+      const v = Math.floor(Number(p.v[i]));
+      if (v > 0) out[i] = Math.min(v, Math.max(0, LIMIT - r.strokes[i]));
+    });
+    return out;
+  } catch (e) { return []; }
+}
+let lastPendingStr = null;
+function savePending() {
+  const s = db.session;
+  const str = s && pending.some(Boolean) ? JSON.stringify({ sid: s.startedAt, v: Array.from(pending, x => x || 0) }) : '';
+  if (str === lastPendingStr) return;
+  lastPendingStr = str;
+  try { if (str) localStorage.setItem(KEY_P, str); else localStorage.removeItem(KEY_P); } catch (e) {}
+}
+
+// Sicherung als Text (Statistik und Spielerliste), zum Beispiel in einer Notiz aufzubewahren.
+function exportBackup() {
+  return JSON.stringify({ app: 'bolla-zaehler', format: 1, exportedAt: new Date().toISOString(),
+    players: db.players, archive: db.archive, settings: db.settings });
+}
+function importBackup() {
+  const el = document.getElementById('sicherung');
+  let d;
+  try { d = JSON.parse(el ? el.value : ''); }
+  catch (e) { backupMsg = 'Das ist keine gültige Sicherung. Der Text ist unvollständig oder verändert.'; return; }
+  if (!d || d.app !== 'bolla-zaehler' || d.format !== 1) { backupMsg = 'Das ist keine Sicherung des Bolla-Zählers.'; return; }
+  const c = cleanDb(d);
+  if (!c.players.length && !c.archive.length) { backupMsg = 'Die Sicherung enthält weder Spieler noch Abende.'; return; }
+  db.players = c.players; db.archive = c.archive;
+  db.settings = Object.assign({}, db.settings, c.settings);
+  backupMsg = `Wiederhergestellt: ${c.players.length} Spieler, ${c.archive.length} Abende.`;
+}
 
 // ---------- Zustand der Oberfläche ----------
 let view = db.session ? 'game' : 'start';
-let setupMode = 4, chosen = [], pending = [], flash = '', armed = null, armTimer = null, lastResult = null;
+let setupMode = 4, chosen = [], pending = loadPending(), flash = '', armed = null, armTimer = null, lastResult = null;
+let armedAt = 0;     // Zeitpunkt, an dem ein Knopf „Wirklich?“ zeigt (Schutz vor Doppeltipp)
+let sperreBis = 0;   // nach Eintragen/Boll kurz keine Tipps annehmen (Doppeltipp)
+let backupMsg = '';
 
 const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -280,7 +380,7 @@ function vStart() {
 
 function addForm() {
   return `<form class="zeile" data-form="add" style="flex-wrap:nowrap">
-    <input type="text" id="neuer-spieler" maxlength="14" placeholder="Neuer Spieler" autocomplete="off" aria-label="Name des neuen Spielers">
+    <input type="text" id="neuer-spieler" data-keep maxlength="14" placeholder="Neuer Spieler" autocomplete="off" aria-label="Name des neuen Spielers">
     <button type="submit">Hinzufügen</button></form>`;
 }
 
@@ -332,7 +432,7 @@ function vGame() {
   if (ph.kind === 'play') {
     const sum = pending.reduce((a, b) => a + (b || 0), 0);
     panel = `<div class="reihe" style="--n:${n}"><div></div>${s.players.map((p, i) => ph.active.includes(i) ? `<div class="steller">
-        <button class="plus" data-act="inc" data-i="${i}" aria-label="Ein Strich mehr für ${esc(p.name)}">+</button>
+        <button class="plus" data-act="inc" data-i="${i}" ${(pending[i] || 0) >= LIMIT - r.strokes[i] ? 'disabled' : ''} aria-label="Ein Strich mehr für ${esc(p.name)}">+</button>
         <div class="neu ${pending[i] ? '' : 'null'}">+${pending[i] || 0}</div>
         <button class="minus still" data-act="dec" data-i="${i}" ${pending[i] ? '' : 'disabled'} aria-label="Ein Strich weniger für ${esc(p.name)}">−</button>
       </div>` : '<div class="matt klein">raus</div>').join('')}</div>
@@ -394,18 +494,43 @@ function vSettings() {
     <div class="kasten"><div class="zeile auseinander" style="flex-wrap:nowrap">
       <div><strong>Zufallsboll</strong><br><span class="matt klein">Knopf, wenn alle gleichzeitig 7 Striche haben.</span></div>
       <button class="schalter" role="switch" aria-checked="${zufallAn()}" data-act="zufallset" aria-label="Zufallsboll">${zufallAn() ? 'An' : 'Aus'}</button></div></div>
+    <div class="kasten"><strong>Sicherung</strong>
+      <p class="matt klein">Spieler und Statistik als Text sichern, zum Beispiel in einer Notiz. Zum Wiederherstellen den Text unten einfügen.</p>
+      <div class="zeile"><button class="still" data-act="export">Sicherung erstellen</button></div>
+      <textarea id="sicherung" data-keep rows="4" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Sicherungstext" placeholder="Sicherungstext hier einfügen"></textarea>
+      <div class="zeile">${armBtn('import', 'Wiederherstellen', 'Alles ersetzen?')}</div>
+      <p class="matt klein" role="status">${esc(backupMsg)}</p></div>
     <div class="kasten"><strong>Offline-Modus</strong>
       <p class="matt klein" id="offline-status">Wird geprüft …</p>
       <p class="matt klein" id="tech-info"></p></div>
     <div class="zeile"><button class="still" data-act="nav" data-v="start">Zurück</button></div></div>`;
 }
 
+function vFehler() {
+  return `<div class="seite"><div class="kopf"><h2>Da ist etwas schiefgelaufen</h2>
+    <p class="matt">Der gespeicherte Stand lässt sich nicht anzeigen. Spieler und Statistik bleiben erhalten.</p></div>
+    <div class="zeile">${armBtn('dropSession', 'Laufenden Abend verwerfen', 'Wirklich verwerfen?', 'haupt')}
+    <button class="still" data-act="nav" data-v="start">Zur Startseite</button></div></div>`;
+}
+const VIEWS = { start: vStart, setup: vSetup, game: vGame, result: vResult, stats: vStats, settings: vSettings };
 let lastView = null;
 function render() {
   const app = document.getElementById('app');
   const alt = app.querySelector('.seite');
   const pos = alt && lastView === view ? alt.scrollTop : 0;
-  app.innerHTML = ({ start: vStart, setup: vSetup, game: vGame, result: vResult, stats: vStats, settings: vSettings }[view] || vStart)();
+  // Eingabefelder (Namensfeld, Sicherungstext) überleben das Neuzeichnen samt Fokus.
+  const keep = {};
+  if (lastView === view) app.querySelectorAll('[data-keep]').forEach(el => { keep[el.id] = { v: el.value, f: document.activeElement === el }; });
+  let html;
+  try { html = (VIEWS[view] || vStart)(); }
+  catch (e) { console.error(e); html = vFehler(); }
+  app.innerHTML = (saveFehler ? '<div class="speicherfehler" role="alert">Speichern nicht möglich: Der Stand geht beim Schließen verloren.</div>' : '') + html;
+  Object.keys(keep).forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (keep[id].v) el.value = keep[id].v;
+    if (keep[id].f) { el.focus(); try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) {} }
+  });
   const t = document.getElementById('tafel');
   if (t) t.scrollTop = t.scrollHeight;
   const neu = app.querySelector('.seite');
@@ -427,6 +552,8 @@ function endSession() {
 const armedActions = {
   end: endSession,
   resetStats: () => { db.archive = []; },
+  import: importBackup,
+  dropSession: () => { db.session = null; db.undo = []; pending = []; flash = ''; view = 'start'; },
 };
 function runArmed(key) {
   if (key.startsWith('del:')) { const id = key.slice(4); db.players = db.players.filter(p => p.id !== id); }
@@ -448,7 +575,7 @@ function zufallsboll() {
   const s = db.session, kand = phaseOf(s).candidates;
   const ziel = kand[zufallszahl(kand.length)];
   const fertig = () => {
-    dreht = false; snapshot(); giveBoll(s, ziel, false);
+    dreht = false; sperreBis = Date.now() + 400; snapshot(); giveBoll(s, ziel, false);
     flash = `🎰 Zufallsboll: ${esc(nameOf(ziel))} bekommt die Boll. Neue Boll, alle bei 0.`;
     save(); render();
   };
@@ -473,10 +600,11 @@ document.addEventListener('click', ev => {
   if (dreht) return;
   const b = ev.target.closest('[data-act]');
   if (!b || b.disabled) return;
+  if (Date.now() < sperreBis) return;   // Doppeltipp direkt nach Eintragen/Boll ignorieren
   const act = b.dataset.act, i = Number(b.dataset.i), s = db.session;
   if (act !== 'arm' && armed) { armed = null; clearTimeout(armTimer); }
   switch (act) {
-    case 'nav': view = b.dataset.v; break;
+    case 'nav': view = b.dataset.v; backupMsg = ''; break;
     case 'zufallset': db.settings = db.settings || {}; db.settings.zufall = !zufallAn(); save(); break;
     case 'mode': setupMode = Number(b.dataset.n); chosen = []; view = 'setup'; break;
     case 'toggle': {
@@ -492,9 +620,16 @@ document.addEventListener('click', ev => {
       db.undo = []; pending = []; flash = ''; view = 'game'; save();
       break;
     }
-    case 'inc': pending[i] = (pending[i] || 0) + 1; flash = ''; break;
+    case 'inc': {
+      // Mehr als bis zur 7 bringt nichts: wer 7 hat, ist raus.
+      const frei = LIMIT - currentRound(s).strokes[i];
+      if ((pending[i] || 0) < frei) pending[i] = (pending[i] || 0) + 1;
+      flash = '';
+      break;
+    }
     case 'dec': pending[i] = Math.max(0, (pending[i] || 0) - 1); break;
     case 'commit': {
+      sperreBis = Date.now() + 400;
       snapshot();
       const e = commitGame(s, pending);
       pending = [];
@@ -505,21 +640,40 @@ document.addEventListener('click', ev => {
       save();
       break;
     }
-    case 'boll': snapshot(); giveBoll(s, i, false); flash = `${esc(nameOf(i))} bekommt die Boll. Neue Boll, alle bei 0.`; save(); break;
+    case 'boll': sperreBis = Date.now() + 400; snapshot(); giveBoll(s, i, false); flash = `${esc(nameOf(i))} bekommt die Boll. Neue Boll, alle bei 0.`; save(); break;
     case 'zufall': zufallsboll(); return;
-    case 'keine': snapshot(); giveBoll(s, null, false); flash = 'Keine Boll vergeben. Neue Boll, alle bei 0.'; save(); break;
+    case 'keine': sperreBis = Date.now() + 400; snapshot(); giveBoll(s, null, false); flash = 'Keine Boll vergeben. Neue Boll, alle bei 0.'; save(); break;
     case 'point': snapshot(); s.points[i]++; save(); break;
-    case 'undo':
-      if (db.undo.length) { db.session = JSON.parse(db.undo.pop()); pending = []; flash = 'Letzte Eingabe zurückgenommen.'; save(); }
+    case 'undo': {
+      let prev = null;   // kaputte Schnappschüsse überspringen
+      while (db.undo.length && !prev) {
+        try { const c = JSON.parse(db.undo.pop()); if (validSession(c)) prev = c; } catch (e) {}
+      }
+      if (prev) { db.session = prev; pending = []; flash = 'Letzte Eingabe zurückgenommen.'; save(); }
       break;
+    }
+    case 'export': {
+      const text = exportBackup(), el = document.getElementById('sicherung');
+      if (el) el.value = text;
+      backupMsg = 'Sicherung erstellt. Text markieren, kopieren und zum Beispiel in einer Notiz speichern.';
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          backupMsg = 'Sicherung erstellt und in die Zwischenablage kopiert.';
+          if (view === 'settings') render();
+        }, () => {});
+      }
+      break;
+    }
     case 'arm': {
       const key = b.dataset.key;
+      if (armed === key && Date.now() - armedAt < 500) return;   // Doppeltipp bestätigt nicht
       clearTimeout(armTimer);
       if (armed === key) { armed = null; runArmed(key); }
-      else { armed = key; armTimer = setTimeout(() => { armed = null; render(); }, 3500); }
+      else { armed = key; armedAt = Date.now(); armTimer = setTimeout(() => { armed = null; render(); }, 3500); }
       break;
     }
   }
+  savePending();
   render();
 });
 
@@ -532,6 +686,7 @@ document.addEventListener('submit', ev => {
   const p = { id: uid(), name };
   db.players.push(p);
   if (view === 'setup' && chosen.length < setupMode) chosen.push(p.id);
+  inp.value = '';
   save(); render();
   const again = document.getElementById('neuer-spieler');
   if (again) again.focus();
@@ -551,18 +706,23 @@ async function checkOffline() {
         : 'Noch nicht bereit. App einmal mit Internet öffnen und kurz warten, dann diese Seite neu öffnen.';
     } catch (e) { text = 'Prüfung fehlgeschlagen.'; }
   }
+  let dauer = 'unbekannt';
+  try { if (navigator.storage && navigator.storage.persisted) dauer = (await navigator.storage.persisted()) ? 'ja' : 'nein'; } catch (e) {}
   const probe = document.createElement('div');
   probe.style.cssText = 'position:fixed;visibility:hidden;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0';
   document.body.appendChild(probe);
   const cs = getComputedStyle(probe);
   const tech = `Version ${APP_VERSION}. Fenster ${innerWidth}×${innerHeight}, Bildschirm ${screen.width}×${screen.height}, `
-    + `Sicherer Bereich oben ${cs.paddingTop}, unten ${cs.paddingBottom}, als App gestartet: ${navigator.standalone ? 'ja' : 'nein'}.`;
+    + `Sicherer Bereich oben ${cs.paddingTop}, unten ${cs.paddingBottom}, als App gestartet: ${navigator.standalone ? 'ja' : 'nein'}, Speicher dauerhaft: ${dauer}.`;
   probe.remove();
   const a = document.getElementById('offline-status'), b = document.getElementById('tech-info');
   if (a) a.textContent = text;
   if (b) b.textContent = tech;
 }
 
+
+// Bitte den Browser, die Daten nicht von sich aus zu löschen (hilft vor allem, wenn die App nur im Browser läuft).
+try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) {}
 
 render();
 
